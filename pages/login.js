@@ -15,15 +15,15 @@ export default function Login() {
     })
   }, [])
 
-  async function submit() {
-    setMsg('')
-    const fn = mode === 'signin' ? supabase.auth.signInWithPassword
-      : supabase.auth.signUp
-    const { error } = await fn({ email, password })
-    if (error) setMsg(error.message)
-    else if (mode === 'signup') setMsg('Account created — you can sign in now.')
-    else router.push('/')
-  }
+ async function submit() {
+  setMsg('')
+  const { error } = mode === 'signin'
+    ? await supabase.auth.signInWithPassword({ email, password })
+    : await supabase.auth.signUp({ email, password })
+  if (error) setMsg(error.message)
+  else if (mode === 'signup') setMsg('Account created — you can sign in now.')
+  else router.push('/')
+}
 
   return (
     <div style={s.wrap}>
