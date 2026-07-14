@@ -37,10 +37,11 @@ export default function Home() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
-  const [view, setView] = useState('calendar')          // 'calendar' | 'list'
-  const [dayOpen, setDayOpen] = useState(null)          // 'YYYY-MM-DD' | null
+  const [view, setView] = useState('calendar')          // 'calendar' | 'day' | 'list'
+  const [dayCursor, setDayCursor] = useState(fmtDate(new Date()))
   const now = new Date()
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() })
+  const [narrow, setNarrow] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -52,6 +53,13 @@ export default function Home() {
       if (!s) router.push('/login')
     })
     return () => sub.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    const check = () => setNarrow(window.innerWidth < 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
   }, [])
 
   async function load() {
@@ -101,8 +109,9 @@ export default function Home() {
   posts.forEach(p => { (byDate[p.post_date] = byDate[p.post_date] || []).push(p) })
 
   const knownClients = [...new Set(posts.map(p => p.client).filter(Boolean))].sort()
-  const knownUploaders = [...new Set([...DEFAULT_UPLOADERS,
-    ...posts.map(p => p.uploader).filter(Boolean)])]
+  const knownPeople = [...new Set([...DEFAULT_UPLOADERS,
+    ...posts.map(p => p.uploader).filter(Boolean),
+    ...posts.map(p => p.owner).filter(Boolean)])]
 
   const grouped = {}
   posts.forEach(p => {
@@ -113,14 +122,19 @@ export default function Home() {
   const todayStr = fmtDate(new Date())
   const prevMonth = () => setCursor(c => c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 })
   const nextMonth = () => setCursor(c => c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 })
+  const shiftDay = n => setDayCursor(d => {
+    const dt = parseDate(d); dt.setDate(dt.getDate() + n); return fmtDate(dt)
+  })
 
   return (
     <div style={s.page}>
       <header style={s.header}>
-        <h1 style={s.logo}>📅 GSMR Content Calendar</h1>
+        <h1 style={{ ...s.logo, fontSize: narrow ? 16 : 20 }}>📅 GSMR Content Calendar</h1>
         <div style={s.tabs}>
           <button style={{ ...s.tab, ...(view === 'calendar' ? s.tabOn : {}) }}
-            onClick={() => setView('calendar')}>Calendar</button>
+            onClick={() => setView('calendar')}>Month</button>
+          <button style={{ ...s.tab, ...(view === 'day' ? s.tabOn : {}) }}
+            onClick={() => setView('day')}>Day</button>
           <button style={{ ...s.tab, ...(view === 'list' ? s.tabOn : {}) }}
             onClick={() => setView('list')}>List</button>
         </div>
@@ -148,28 +162,45 @@ export default function Home() {
               const isToday = ds === todayStr
               const dayPosts = byDate[ds] || []
               return (
-                <div key={i} onClick={() => setDayOpen(ds)}
-                  style={{ ...s.cell, background: inMonth ? '#fff' : '#eef0f3',
+                <div key={i} onClick={() => { setDayCursor(ds); setView('day') }}
+                  style={{ ...s.cell, minHeight: narrow ? 58 : 96,
+                    background: inMonth ? '#fff' : '#eef0f3',
                     outline: isToday ? '2px solid #2c3e50' : 'none' }}>
                   <div style={{ ...s.cellNum, ...(isToday ? s.todayNum : {}),
                     color: isToday ? '#fff' : inMonth ? '#333' : '#b5bcc4' }}>
                     {d.getDate()}
                   </div>
-                  {dayPosts.slice(0, 3).map(p => (
-                    <div key={p.id} title={`${p.client} — ${p.title}`}
-                      onClick={e => { e.stopPropagation(); setEditing(p) }}
-                      style={{ ...s.pill, background: clientColor(p.client),
-                        opacity: p.all_done ? 0.55 : 1 }}>
-                      {p.all_done ? '✓ ' : ''}{p.trial_reel ? '🧪 ' : ''}{p.title}
-                    </div>
-                  ))}
-                  {dayPosts.length > 3 &&
-                    <div style={s.more}>+{dayPosts.length - 3} more</div>}
+                  {narrow ? (
+                    dayPosts.length > 0 && (
+                      <div style={s.dotRow}>
+                        {dayPosts.slice(0, 4).map(p => (
+                          <span key={p.id}
+                            style={{ ...s.dot, background: clientColor(p.client),
+                              opacity: p.all_done ? 0.45 : 1 }} />
+                        ))}
+                        {dayPosts.length > 4 &&
+                          <span style={s.more}>+{dayPosts.length - 4}</span>}
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      {dayPosts.slice(0, 3).map(p => (
+                        <div key={p.id} title={`${p.client} — ${p.title}`}
+                          onClick={e => { e.stopPropagation(); setEditing(p) }}
+                          style={{ ...s.pill, background: clientColor(p.client),
+                            opacity: p.all_done ? 0.55 : 1 }}>
+                          {p.all_done ? '✓ ' : ''}{p.trial_reel ? '🧪 ' : ''}{p.title}
+                        </div>
+                      ))}
+                      {dayPosts.length > 3 &&
+                        <div style={s.more}>+{dayPosts.length - 3} more</div>}
+                    </>
+                  )}
                 </div>
               )
             })}
           </div>
-          <p style={s.legend}>Tap a day to view / add posts · tap a pill to edit it · 🧪 = Trial Reel · ✓ = all platforms done</p>
+          <p style={s.legend}>Tap a day to open its Day view · tap a pill to edit that post · 🧪 = Trial Reel · ✓ = all platforms done</p>
         </div>
       )}
 
@@ -190,29 +221,39 @@ export default function Home() {
         </>
       )}
 
-      {/* ---------------- DAY PANEL ---------------- */}
-      {dayOpen && !editing && (
-        <div style={s.modalWrap} onClick={() => setDayOpen(null)}>
-          <div style={{ ...s.modal, width: 560 }} onClick={e => e.stopPropagation()}>
-            <div style={s.dayHead}>
-              <h2 style={s.modalTitle}>{niceDate(dayOpen)}</h2>
-              <button style={s.addSmall}
-                onClick={() => setEditing(blankPost(dayOpen))}>+ Add post</button>
+      {/* ---------------- DAY VIEW ---------------- */}
+      {view === 'day' && (() => {
+        const dayPosts = [...(byDate[dayCursor] || [])].sort((a, b) =>
+          (a.uploader || '').localeCompare(b.uploader || '') ||
+          (a.client || '').localeCompare(b.client || ''))
+        const doneCount = dayPosts.filter(p => p.all_done).length
+        return (
+          <div style={s.dayWrap}>
+            <div style={s.calBar}>
+              <button style={s.navBtn} onClick={() => shiftDay(-1)}>‹</button>
+              <h2 style={{ ...s.dayTitle, fontSize: narrow ? 15 : 18 }}>{niceDate(dayCursor)}</h2>
+              <button style={s.navBtn} onClick={() => shiftDay(1)}>›</button>
+              <button style={s.todayBtn} onClick={() => setDayCursor(todayStr)}>Today</button>
             </div>
-            {(byDate[dayOpen] || []).length === 0 &&
-              <p style={s.emptyDay}>Nothing scheduled this day — add the first post.</p>}
-            {(byDate[dayOpen] || []).map(p => (
+            <div style={s.dayBar2}>
+              <span style={s.dayCount}>
+                {dayPosts.length === 0 ? 'No uploads scheduled'
+                  : `${dayPosts.length} upload${dayPosts.length !== 1 ? 's' : ''} · ${doneCount} done`}
+              </span>
+              <button style={s.addSmall}
+                onClick={() => setEditing(blankPost(dayCursor))}>+ Add post</button>
+            </div>
+            {dayPosts.length === 0 &&
+              <p style={s.emptyDay}>Nothing on this day yet — hit “+ Add post” to schedule the first upload.</p>}
+            {dayPosts.map(p => (
               <PostCard key={p.id} p={p} onEdit={() => setEditing(p)}
                 onDelete={() => remove(p.id)} onToggle={togglePlatform} />
             ))}
-            <div style={s.modalActions}>
-              <button style={s.cancel} onClick={() => setDayOpen(null)}>Close</button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
-      {editing && <Editor post={editing} clients={knownClients} uploaders={knownUploaders}
+      {editing && <Editor post={editing} clients={knownClients} people={knownPeople}
         onSave={save} onCancel={() => setEditing(null)} />}
     </div>
   )
@@ -231,7 +272,8 @@ function PostCard({ p, onEdit, onDelete, onToggle }) {
       </div>
       <div style={s.tagRow}>
         <span style={{ ...s.tag, background: clientColor(p.client) }}>{p.client}</span>
-        {p.uploader && <span style={s.uploaderTag}>👤 {p.uploader}</span>}
+        {p.owner && <span style={s.ownerTag} title="Post owner">🎬 {p.owner}</span>}
+        {p.uploader && <span style={s.uploaderTag} title="Uploader">👤 {p.uploader}</span>}
         {p.trial_reel && <span style={s.trialTag}>🧪 Trial Reel</span>}
       </div>
       {p.link && <a href={p.link} style={s.link} target="_blank" rel="noreferrer">🔗 {p.link}</a>}
@@ -257,7 +299,7 @@ function PostCard({ p, onEdit, onDelete, onToggle }) {
 }
 
 // ---------------- editor modal ----------------
-function Editor({ post, clients, uploaders, onSave, onCancel }) {
+function Editor({ post, clients, people, onSave, onCancel }) {
   const [p, setP] = useState(post)
   const set = (k, v) => setP(prev => ({ ...prev, [k]: v }))
   const togglePlat = plat => {
@@ -268,6 +310,7 @@ function Editor({ post, clients, uploaders, onSave, onCancel }) {
   return (
     <div style={s.modalWrap} onClick={onCancel}>
       <div style={s.modal} onClick={e => e.stopPropagation()}>
+        <div style={s.modalBody}>
         <h2 style={s.modalTitle}>{p.id ? 'Edit post' : 'New post'}</h2>
 
         <label style={s.lbl}>Client</label>
@@ -285,9 +328,22 @@ function Editor({ post, clients, uploaders, onSave, onCancel }) {
         <input style={s.mInput} type="date" value={p.post_date}
           onChange={e => set('post_date', e.target.value)} />
 
-        <label style={s.lbl}>Uploader</label>
+        <label style={s.lbl}>Post owner <span style={s.hintInline}>(whose content it is)</span></label>
         <div style={s.platforms}>
-          {uploaders.map(u => (
+          {people.map(u => (
+            <span key={u} onClick={() => set('owner', p.owner === u ? '' : u)}
+              style={{ ...s.chip, background: p.owner === u ? '#8e44ad' : '#ecf0f1',
+                color: p.owner === u ? '#fff' : '#555' }}>
+              {u}
+            </span>
+          ))}
+        </div>
+        <input style={s.mInput} value={p.owner || ''}
+          onChange={e => set('owner', e.target.value)} placeholder="or type a name…" />
+
+        <label style={s.lbl}>Uploader <span style={s.hintInline}>(who posts it)</span></label>
+        <div style={s.platforms}>
+          {people.map(u => (
             <span key={u} onClick={() => set('uploader', p.uploader === u ? '' : u)}
               style={{ ...s.chip, background: p.uploader === u ? '#2c3e50' : '#ecf0f1',
                 color: p.uploader === u ? '#fff' : '#555' }}>
@@ -325,6 +381,7 @@ function Editor({ post, clients, uploaders, onSave, onCancel }) {
             <span style={s.hint}> (IG tests it on non-followers first)</span></span>
         </div>
 
+        </div>
         <div style={s.modalActions}>
           <button style={s.cancel} onClick={onCancel}>Cancel</button>
           <button style={s.saveBtn}
@@ -343,7 +400,7 @@ function Editor({ post, clients, uploaders, onSave, onCancel }) {
 function blankPost(date) {
   return { client: '', title: '', post_date: date || fmtDate(new Date()),
     link: '', caption: '', platforms: ['IG Feed', 'IG Story', 'TikTok'],
-    done_platforms: [], uploader: '', trial_reel: false }
+    done_platforms: [], uploader: '', owner: '', trial_reel: false }
 }
 
 const s = {
@@ -384,6 +441,8 @@ const s = {
   pill: { color: '#fff', borderRadius: 5, padding: '2px 6px', fontSize: 10.5,
     marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   more: { fontSize: 10, color: '#888', paddingLeft: 4 },
+  dotRow: { display: 'flex', flexWrap: 'wrap', gap: 3, padding: '0 3px' },
+  dot: { width: 7, height: 7, borderRadius: '50%' },
   legend: { textAlign: 'center', color: '#999', fontSize: 12, marginTop: 14 },
 
   // list
@@ -400,6 +459,8 @@ const s = {
   date: { color: '#999', fontSize: 13, whiteSpace: 'nowrap' },
   tagRow: { display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 0' },
   tag: { color: '#fff', padding: '3px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600 },
+  ownerTag: { background: '#f3e8fd', color: '#6d3a9e', padding: '3px 10px',
+    borderRadius: 12, fontSize: 12 },
   uploaderTag: { background: '#ecf0f1', color: '#555', padding: '3px 10px',
     borderRadius: 12, fontSize: 12 },
   trialTag: { background: '#fff3cd', color: '#8a6d1a', padding: '3px 10px',
@@ -414,24 +475,32 @@ const s = {
     borderRadius: 6, cursor: 'pointer' },
 
   // modals
-  modalWrap: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)',
-    display: 'grid', placeItems: 'center', zIndex: 10, padding: 16 },
-  modal: { background: '#fff', borderRadius: 14, padding: 24, width: 440, maxWidth: '100%',
-    maxHeight: '90vh', overflow: 'auto' },
+  modalWrap: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 10,
+    overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', padding: 14 },
+  modal: { background: '#fff', borderRadius: 14, width: 440, maxWidth: '100%', margin: 'auto' },
+  modalBody: { padding: '20px 22px 6px' },
   modalTitle: { marginTop: 0, fontSize: 19 },
-  dayHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  dayWrap: { maxWidth: 780, margin: '20px auto', padding: '0 16px' },
+  dayTitle: { margin: 0, fontSize: 18, flex: 1, textAlign: 'center' },
+  dayBar2: { display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    margin: '14px 0 10px', gap: 10 },
+  dayCount: { color: '#888', fontSize: 13 },
   addSmall: { background: '#27ae60', color: '#fff', border: 0, padding: '8px 14px',
     borderRadius: 8, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' },
   emptyDay: { color: '#888' },
   lbl: { display: 'block', fontSize: 12, color: '#888', margin: '12px 0 4px',
     textTransform: 'uppercase' },
   mInput: { width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd',
-    fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' },
+    fontSize: 16, boxSizing: 'border-box', fontFamily: 'inherit' },
   checkRow: { display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0 4px',
     cursor: 'pointer', fontSize: 14, userSelect: 'none' },
   hint: { color: '#999', fontSize: 12 },
-  modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 },
-  cancel: { background: '#ecf0f1', border: 0, padding: '10px 18px', borderRadius: 8, cursor: 'pointer' },
-  saveBtn: { background: '#2c3e50', color: '#fff', border: 0, padding: '10px 18px',
-    borderRadius: 8, cursor: 'pointer', fontWeight: 600 }
+  hintInline: { textTransform: 'none', color: '#aaa' },
+  modalActions: { position: 'sticky', bottom: 0, display: 'flex', justifyContent: 'flex-end',
+    gap: 8, padding: '14px 22px', background: '#fff', borderTop: '1px solid #ececec',
+    borderRadius: '0 0 14px 14px', marginTop: 10 },
+  cancel: { background: '#ecf0f1', border: 0, padding: '12px 20px', borderRadius: 8,
+    cursor: 'pointer', fontSize: 15 },
+  saveBtn: { background: '#2c3e50', color: '#fff', border: 0, padding: '12px 22px',
+    borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15 }
 }
